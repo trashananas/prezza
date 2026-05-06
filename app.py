@@ -10,6 +10,12 @@ from modules.speech import listen_and_suggest
 st.set_page_config(page_title="AI Суфлёр для презентаций", layout="wide")
 st.title("AI Суфлёр для презентаций")
 
+# Предзагрузка модели при старте приложения
+with st.spinner("Инициализация AI модели (при первом запуске выполняется загрузка — это может занять несколько минут)..."):
+    from modules.ai import get_llm
+    get_llm()
+st.success("AI модель готова к работе!", icon="✅")
+
 
 import json
 from io import StringIO
@@ -38,7 +44,7 @@ if uploaded_file:
             st.warning("Слишком много слайдов! Для теста обработаем только первые 20.")
             slides = slides[:20]
 
-    if slides and st.button("Сгенерировать план и текст для слайдов (стриминг через Ollama)"):
+    if slides and st.button("Сгенерировать план и текст для слайдов"):
         if all(not s["content"].strip() for s in slides):
             st.error("Не удалось извлечь текст из презентации. Проверьте файл.")
         else:
