@@ -4,5 +4,5 @@ llama-cpp-python
 huggingface-hub
 pymupdf
 python-pptx
-speechrecognition
-pyaudio
+tabulate
+pandas
