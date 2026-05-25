@@ -21,8 +21,8 @@ def parse_presentation(uploaded_file):
                     df = tab.to_pandas()
                     if not df.empty:
                         tables_content += "\n\n[Таблица с данными]:\n" + df.to_markdown(index=False)
-            except Exception:
-                pass
+            except Exception as e:
+                tables_content += f"\n\n[Ошибка при извлечении таблицы: {e}]"
 
             # Попытка извлечения изображений
             image_list = page.get_images(full=True)
@@ -45,43 +45,39 @@ def parse_presentation(uploaded_file):
             charts_content = ""
 
             for shape in slide.shapes:
-                # Текст
                 if hasattr(shape, "text") and shape.text.strip():
                     texts.append(shape.text.strip())
 
-                # Таблицы
                 if shape.has_table:
-                    table = shape.table
-                    rows = []
-                    for row in table.rows:
-                        rows.append([cell.text_frame.text.strip() for cell in row.cells])
-
-                    if rows:
-                        header = rows[0]
-                        body = rows[1:]
-                        table_md = "| " + " | ".join(header) + " |\n"
-                        table_md += "| " + " | ".join(["---"] * len(header)) + " |\n"
-                        for row in body:
-                            table_md += "| " + " | ".join(row) + " |\n"
-                        tables_content += "\n\n[Таблица с данными]:\n" + table_md
-
-                # Диаграммы
-                if shape.has_chart:
-                    chart = shape.chart
                     try:
-                        charts_content += f"\n\n[Диаграмма: {chart.chart_title.text_frame.text if chart.has_title else 'Без названия'}]\n"
-                        # Попытка извлечь данные из диаграммы
+                        table = shape.table
+                        rows = []
+                        for row in table.rows:
+                            rows.append([cell.text_frame.text.strip() for cell in row.cells])
+
+                        if rows:
+                            header = rows[0]
+                            body = rows[1:]
+                            table_md = "| " + " | ".join(header) + " |\n"
+                            table_md += "| " + " | ".join(["---"] * len(header)) + " |\n"
+                            for row in body:
+                                table_md += "| " + " | ".join(row) + " |\n"
+                            tables_content += "\n\n[Таблица с данными]:\n" + table_md
+                    except Exception as e:
+                        tables_content += f"\n\n[Ошибка при парсинге таблицы: {e}]"
+
+                if shape.has_chart:
+                    try:
+                        chart = shape.chart
+                        title = chart.chart_title.text_frame.text if chart.has_title else 'Без названия'
+                        charts_content += f"\n\n[Диаграмма: {title}]\n"
                         for series in chart.plots[0].series:
                             charts_content += f"- Серия '{series.name}': {list(series.values)}\n"
-                    except:
-                        charts_content += "\n[Диаграмма найдена, но данные извлечь не удалось]\n"
+                    except Exception as e:
+                        charts_content += f"\n[Ошибка при извлечении данных диаграммы: {e}]\n"
 
-                # Изображения
                 if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
                     images_count += 1
-                elif shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-                    # Можно рекурсивно искать, но пока пропустим
-                    pass
 
             slide_text = "\n".join(texts).strip()
             if images_count > 0:

@@ -1,5 +1,4 @@
 # Модуль для распознавания речи и подсказок
-import threading
 
 def listen_and_suggest(plan_and_script):
     """

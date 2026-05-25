@@ -30,34 +30,38 @@ def get_llm():
     global _llm
     if _llm is None:
         _ensure_model_downloaded()
-        from llama_cpp import Llama
-        print("[AI] Инициализация модели...")
-        _llm = Llama(
-            model_path=str(MODEL_PATH),
-            n_ctx=4096,
-            n_threads=max(1, (os.cpu_count() or 4) // 2),
-            verbose=False,
-        )
-        print("[AI] Модель готова.")
+        try:
+            from llama_cpp import Llama
+            print("[AI] Инициализация модели...")
+            _llm = Llama(
+                model_path=str(MODEL_PATH),
+                n_ctx=4096,
+                n_threads=max(1, (os.cpu_count() or 4) // 2),
+                verbose=False,
+            )
+            print("[AI] Модель готова.")
+        except ImportError:
+            print("[Ошибка] Библиотека llama-cpp-python не установлена.")
+            raise
     return _llm
 
 
 def _build_prompt(slide_content, slide_num, total, special="", history=""):
     return (
-        "Ты — профессиональный ассистент по подготовке презентаций и написанию сценариев для выступлений.\n"
-        f"Твоя задача: подготовить план-суфлер для слайда {slide_num} из {total}.\n\n"
+        "Ты — профессиональный ассистент по подготовке презентаций.\n"
+        f"Твоя задача: подготовить план-суфлер для слайда номер {slide_num} (всего слайдов: {total}).\n\n"
         "### ПРАВИЛА:\n"
         "1. ВЕСЬ ответ должен быть СТРОГО НА РУССКОМ ЯЗЫКЕ.\n"
-        "2. НЕ используй английский или другие языки, даже для терминов (используй общепринятые переводы).\n"
+        "2. НЕ используй английский или другие языки, даже для терминов.\n"
         "3. Обязательно сохрани все цифры, даты, проценты и факты из текста слайда.\n"
         "4. Если на слайде есть таблица — обязательно прокомментируй её ключевые показатели.\n\n"
         "### ФОРМАТ ОТВЕТА (СТРОГО):\n"
         "TOSAY:\n"
-        "- Тезис 1 (кратко, что НЕОБХОДИМО упомянуть)\n"
+        "- Тезис 1\n"
         "- Тезис 2\n"
         "...\n"
         "SCRIPT:\n"
-        "Полный текст выступления для этого слайда. Речь должна быть живой, связной, с плавными переходами.\n\n"
+        "Полный текст выступления...\n\n"
         "### КОНТЕНТ СЛАЙДА:\n"
         f"{slide_content}\n\n"
         f"{history}\n"
@@ -80,7 +84,6 @@ def _parse_partial(partial):
             ]
             script = script_part.strip()
         else:
-            # SCRIPT еще не сгенерирован
             tosay = [
                 line.strip("-• ").strip()
                 for line in parts.strip().splitlines()
@@ -92,33 +95,28 @@ def _parse_partial(partial):
 
 
 def stream_generate_plan_and_script(slides):
-    """
-    Генерирует план и текст для слайдов в режиме стриминга.
-    """
+    """Генерирует план и текст для слайдов в режиме стриминга."""
     llm = get_llm()
     total = len(slides)
     prev_scripts = []
 
-    # We ignore the simple similarity check for now to ensure all slides are processed,
-    # but we can keep it if needed. Let's make it more robust later.
-
     for idx, slide in enumerate(slides):
         if not slide["content"].strip():
-            yield idx, {"tosay": ["[Слайд пуст]"], "script": "На этом слайде нет текста. Можете просто перелистнуть его или добавить комментарий от себя."}
+            yield idx, {"tosay": ["[Слайд пуст]"], "script": "На этом слайде нет текста."}
             continue
 
-        slide_num = f"{idx + 1}/{total}"
+        slide_num = idx + 1
         prompt_content = slide["content"]
 
         history = ""
         if prev_scripts:
-            history = "### ПРЕДЫДУЩИЙ КОНТЕКСТ (для связности):\n" + prev_scripts[-1][:200] + "..."
+            history = "### ПРЕДЫДУЩИЙ КОНТЕКСТ:\n" + prev_scripts[-1][:200] + "..."
 
         special = ""
         if idx == 0:
-            special = "### ДОПОЛНИТЕЛЬНО: Начни с приветствия аудитории и краткого вступления."
+            special = "### ДОПОЛНИТЕЛЬНО: Начни с приветствия аудитории."
         elif idx == total - 1:
-            special = "### ДОПОЛНИТЕЛЬНО: В конце поблагодари за внимание и предложи задать вопросы."
+            special = "### ДОПОЛНИТЕЛЬНО: В конце поблагодари за внимание."
 
         prompt = _build_prompt(prompt_content, slide_num, total, special, history)
 
@@ -137,7 +135,5 @@ def stream_generate_plan_and_script(slides):
                 tosay, script = _parse_partial(partial)
                 yield idx, {"tosay": tosay, "script": script}
 
-        # After full generation for a slide, store it for context
         _, final_script = _parse_partial(partial)
         prev_scripts.append(final_script)
-

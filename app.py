@@ -1,12 +1,13 @@
 import streamlit as st
 import json
+import html
 from io import StringIO
 from modules.ai import stream_generate_plan_and_script
 from modules.presentation import parse_presentation
 
 st.set_page_config(page_title="AI Суфлёр", layout="wide", initial_sidebar_state="collapsed")
 
-# Custom CSS for better UI
+# Кастомный CSS для улучшения интерфейса
 st.markdown("""
 <style>
     .main {
@@ -19,13 +20,6 @@ st.markdown("""
         background-color: #007bff;
         color: white;
     }
-    .tosay-box {
-        background-color: #e9ecef;
-        padding: 15px;
-        border-left: 5px solid #007bff;
-        border-radius: 5px;
-        margin-bottom: 20px;
-    }
     .script-box {
         background-color: white;
         padding: 20px;
@@ -33,20 +27,7 @@ st.markdown("""
         border-radius: 5px;
         font-size: 1.2em;
         line-height: 1.6;
-    }
-    .teleprompter-text {
-        font-size: 2.5em;
-        font-weight: 500;
-        text-align: center;
-        padding: 40px;
-        min-height: 400px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .thesis-item {
-        font-size: 1.5em;
-        margin-bottom: 10px;
+        white-space: pre-wrap;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -56,6 +37,25 @@ if "plan_and_script" not in st.session_state:
 if "current_slide" not in st.session_state:
     st.session_state["current_slide"] = 0
 
+def validate_plan(data):
+    """Проверяет структуру импортируемого плана."""
+    if not isinstance(data, list):
+        return False
+    for item in data:
+        if not isinstance(item, dict):
+            return False
+        if "tosay" not in item or "script" not in item:
+            return False
+    return True
+
+def reset_progress():
+    """Сбрасывает текущий слайд и состояние всех чекбоксов."""
+    st.session_state["current_slide"] = 0
+    # Удаляем ключи чекбоксов из session_state
+    keys_to_delete = [key for key in st.session_state.keys() if key.startswith("check_")]
+    for key in keys_to_delete:
+        del st.session_state[key]
+
 st.title("🚀 AI Суфлёр для презентаций")
 
 tabs = st.tabs(["📁 Загрузка", "📝 Редактор", "📺 Суфлёр"])
@@ -64,16 +64,17 @@ with tabs[0]:
     st.header("Загрузка презентации")
     uploaded_file = st.file_uploader("Выберите файл (PDF, PPTX или TXT с планом)", type=["pdf", "pptx", "txt"])
 
-    col1, col2 = st.columns(2)
-
     if uploaded_file:
         if uploaded_file.name.lower().endswith('.txt'):
             try:
                 imported = json.load(uploaded_file)
-                st.session_state["plan_and_script"] = imported
-                st.success("План успешно импортирован!")
-            except:
-                st.error("Ошибка формата файла!")
+                if validate_plan(imported):
+                    st.session_state["plan_and_script"] = imported
+                    st.success("План успешно импортирован!")
+                else:
+                    st.error("Неверная структура файла. Ожидался список объектов с полями 'tosay' и 'script'.")
+            except Exception as e:
+                st.error(f"Ошибка при чтении JSON: {e}")
         else:
             if st.button("Обработать и сгенерировать план"):
                 with st.spinner("Извлечение текста и генерация сценария..."):
@@ -94,14 +95,15 @@ with tabs[1]:
     else:
         for i, slide in enumerate(st.session_state["plan_and_script"]):
             with st.expander(f"Слайд {i+1}", expanded=(i == 0)):
-                # Edit TOSAY
-                tosay_str = "\n".join([f"- {t}" for t in slide.get("tosay", [])])
+                # Редактирование TOSAY
+                tosay_list = slide.get("tosay", [])
+                tosay_str = "\n".join([f"- {t}" for t in tosay_list])
                 new_tosay = st.text_area(f"Тезисы (TOSAY) для слайда {i+1}", tosay_str, key=f"edit_tosay_{i}")
 
-                # Edit SCRIPT
+                # Редактирование SCRIPT
                 new_script = st.text_area(f"Текст (SCRIPT) для слайда {i+1}", slide.get("script", ""), key=f"edit_script_{i}", height=200)
 
-                # Update session state
+                # Обновление состояния
                 st.session_state["plan_and_script"][i]["tosay"] = [t.strip("- ").strip() for t in new_tosay.splitlines() if t.strip()]
                 st.session_state["plan_and_script"][i]["script"] = new_script
 
@@ -116,7 +118,7 @@ with tabs[2]:
         slides = st.session_state["plan_and_script"]
         curr_idx = st.session_state["current_slide"]
 
-        # Navigation
+        # Навигация
         col1, col2, col3 = st.columns([1, 2, 1])
         with col1:
             if st.button("⬅️ Назад") and curr_idx > 0:
@@ -132,7 +134,7 @@ with tabs[2]:
 
         st.markdown("---")
 
-        # UI for Teleprompter
+        # Интерфейс суфлёра
         col_left, col_right = st.columns([1, 2])
 
         with col_left:
@@ -143,13 +145,13 @@ with tabs[2]:
 
         with col_right:
             st.subheader("🎤 Текст выступления")
+            # Безопасный вывод текста с экранированием HTML
+            safe_script = html.escape(slides[curr_idx].get("script", ""))
             st.markdown(f"""
-            <div class="script-box">
-                {slides[curr_idx].get("script", "").replace('\n', '<br>')}
-            </div>
+            <div class="script-box">{safe_script}</div>
             """, unsafe_allow_html=True)
 
         st.markdown("---")
         if st.button("🔄 Сбросить прогресс"):
-            st.session_state["current_slide"] = 0
+            reset_progress()
             st.rerun()
