@@ -1,13 +1,59 @@
 import streamlit as st
 import json
 import html
+import subprocess
+import sys
+import time
 from io import StringIO
-from modules.ai import stream_generate_plan_and_script
-from modules.presentation import parse_presentation
 
 st.set_page_config(page_title="AI Суфлёр", layout="wide", initial_sidebar_state="collapsed")
 
-# Кастомный CSS для улучшения интерфейса
+# Попытка импорта критических модулей
+def check_and_install_dependencies():
+    try:
+        import llama_cpp
+        return True
+    except ImportError:
+        placeholder = st.empty()
+        start_time = time.time()
+        # Ожидаемое время установки (примерно 30-60 секунд для колес)
+        estimated_time = 60
+
+        with placeholder.container():
+            st.warning("🚀 **Подождите, устанавливаем пакет `llama-cpp-python`...**")
+            st.info("Это необходимо для работы локальной AI-модели. Обычно это занимает около минуты.")
+            timer_placeholder = st.empty()
+
+            # Запуск установки в фоновом режиме
+            process = subprocess.Popen([
+                sys.executable, "-m", "pip", "install", "llama-cpp-python",
+                "--extra-index-url", "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            while process.poll() is None:
+                elapsed = int(time.time() - start_time)
+                remaining = max(0, estimated_time - elapsed)
+                timer_placeholder.markdown(f"⏳ Примерное время ожидания: **{remaining} сек.** (обновляется каждые 10 сек.)")
+                time.sleep(10)
+
+            if process.returncode == 0:
+                st.success("✅ Библиотека успешно установлена! Перезагрузка...")
+                time.sleep(2)
+                st.rerun()
+            else:
+                stderr = process.stderr.read().decode()
+                st.error(f"❌ Ошибка при установке: {stderr}")
+                return False
+
+# Запускаем проверку перед основным кодом
+if not check_and_install_dependencies():
+    st.stop()
+
+# Остальные импорты (теперь безопасны)
+from modules.ai import stream_generate_plan_and_script
+from modules.presentation import parse_presentation
+
+# Кастомный CSS
 st.markdown("""
 <style>
     .main {
@@ -51,28 +97,11 @@ def validate_plan(data):
 def reset_progress():
     """Сбрасывает текущий слайд и состояние всех чекбоксов."""
     st.session_state["current_slide"] = 0
-    # Удаляем ключи чекбоксов из session_state
     keys_to_delete = [key for key in st.session_state.keys() if key.startswith("check_")]
     for key in keys_to_delete:
         del st.session_state[key]
 
 st.title("🚀 AI Суфлёр для презентаций")
-
-# Проверка наличия критических библиотек
-libs_ok = True
-try:
-    import llama_cpp
-except ImportError:
-    st.error("""
-    **Ошибка: Библиотека `llama-cpp-python` не установлена.**
-
-    Для исправления выполните в терминале:
-    ```bash
-    pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-    ```
-    Подробные инструкции в файле `README.md`.
-    """)
-    libs_ok = False
 
 tabs = st.tabs(["📁 Загрузка", "📝 Редактор", "📺 Суфлёр"])
 
@@ -88,11 +117,11 @@ with tabs[0]:
                     st.session_state["plan_and_script"] = imported
                     st.success("План успешно импортирован!")
                 else:
-                    st.error("Неверная структура файла. Ожидался список объектов с полями 'tosay' и 'script'.")
+                    st.error("Неверная структура файла.")
             except Exception as e:
                 st.error(f"Ошибка при чтении JSON: {e}")
         else:
-            if st.button("Обработать и сгенерировать план", disabled=not libs_ok):
+            if st.button("Обработать и сгенерировать план"):
                 with st.spinner("Извлечение текста и генерация сценария..."):
                     try:
                         slides = parse_presentation(uploaded_file)
@@ -103,7 +132,7 @@ with tabs[0]:
                             st.session_state["plan_and_script"][idx] = partial
                             with placeholder.container():
                                 st.info(f"Генерация слайда {idx+1}/{len(slides)}...")
-                        st.success("Готово! Перейдите во вкладку 'Редактор' или 'Суфлёр'.")
+                        st.success("Готово!")
                     except Exception as e:
                         st.error(f"Произошла ошибка при генерации: {e}")
 
@@ -114,18 +143,12 @@ with tabs[1]:
     else:
         for i, slide in enumerate(st.session_state["plan_and_script"]):
             with st.expander(f"Слайд {i+1}", expanded=(i == 0)):
-                # Редактирование TOSAY
                 tosay_list = slide.get("tosay", [])
                 tosay_str = "\n".join([f"- {t}" for t in tosay_list])
                 new_tosay = st.text_area(f"Тезисы (TOSAY) для слайда {i+1}", tosay_str, key=f"edit_tosay_{i}")
-
-                # Редактирование SCRIPT
                 new_script = st.text_area(f"Текст (SCRIPT) для слайда {i+1}", slide.get("script", ""), key=f"edit_script_{i}", height=200)
-
-                # Обновление состояния
                 st.session_state["plan_and_script"][i]["tosay"] = [t.strip("- ").strip() for t in new_tosay.splitlines() if t.strip()]
                 st.session_state["plan_and_script"][i]["script"] = new_script
-
         buf = StringIO()
         json.dump(st.session_state["plan_and_script"], buf, ensure_ascii=False, indent=2)
         st.download_button("💾 Скачать план (JSON)", buf.getvalue(), "plan.json", "application/json")
@@ -136,8 +159,6 @@ with tabs[2]:
     else:
         slides = st.session_state["plan_and_script"]
         curr_idx = st.session_state["current_slide"]
-
-        # Навигация
         col1, col2, col3 = st.columns([1, 2, 1])
         with col1:
             if st.button("⬅️ Назад") and curr_idx > 0:
@@ -150,26 +171,17 @@ with tabs[2]:
             if st.button("Вперед ➡️") and curr_idx < len(slides) - 1:
                 st.session_state["current_slide"] += 1
                 st.rerun()
-
         st.markdown("---")
-
-        # Интерфейс суфлёра
         col_left, col_right = st.columns([1, 2])
-
         with col_left:
             st.subheader("📌 Тезисы (TOSAY)")
             tosay_list = slides[curr_idx].get("tosay", [])
             for i, thesis in enumerate(tosay_list):
                 st.checkbox(thesis, key=f"check_{curr_idx}_{i}")
-
         with col_right:
             st.subheader("🎤 Текст выступления")
-            # Безопасный вывод текста с экранированием HTML
             safe_script = html.escape(slides[curr_idx].get("script", ""))
-            st.markdown(f"""
-            <div class="script-box">{safe_script}</div>
-            """, unsafe_allow_html=True)
-
+            st.markdown(f"""<div class="script-box">{safe_script}</div>""", unsafe_allow_html=True)
         st.markdown("---")
         if st.button("🔄 Сбросить прогресс"):
             reset_progress()
