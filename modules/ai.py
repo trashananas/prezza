@@ -32,17 +32,24 @@ def get_llm():
         _ensure_model_downloaded()
         try:
             from llama_cpp import Llama
-            print("[AI] Инициализация модели...")
-            _llm = Llama(
-                model_path=str(MODEL_PATH),
-                n_ctx=4096,
-                n_threads=max(1, (os.cpu_count() or 4) // 2),
-                verbose=False,
-            )
-            print("[AI] Модель готова.")
         except ImportError:
-            print("[Ошибка] Библиотека llama-cpp-python не установлена.")
-            raise
+            msg = (
+                "\n[Ошибка] Библиотека 'llama-cpp-python' не установлена или не скомпилирована.\n"
+                "Пожалуйста, выполните команду:\n"
+                "pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu\n"
+                "Подробности в README.md"
+            )
+            print(msg)
+            raise ImportError(msg)
+
+        print("[AI] Инициализация модели...")
+        _llm = Llama(
+            model_path=str(MODEL_PATH),
+            n_ctx=4096,
+            n_threads=max(1, (os.cpu_count() or 4) // 2),
+            verbose=False,
+        )
+        print("[AI] Модель готова.")
     return _llm
 
 
@@ -61,7 +68,7 @@ def _build_prompt(slide_content, slide_num, total, special="", history=""):
         "- Тезис 2\n"
         "...\n"
         "SCRIPT:\n"
-        "Полный текст выступления...\n\n"
+        "Полный текст выступления для этого слайда. Речь должна быть живой и связной.\n\n"
         "### КОНТЕНТ СЛАЙДА:\n"
         f"{slide_content}\n\n"
         f"{history}\n"

@@ -58,6 +58,22 @@ def reset_progress():
 
 st.title("🚀 AI Суфлёр для презентаций")
 
+# Проверка наличия критических библиотек
+libs_ok = True
+try:
+    import llama_cpp
+except ImportError:
+    st.error("""
+    **Ошибка: Библиотека `llama-cpp-python` не установлена.**
+
+    Для исправления выполните в терминале:
+    ```bash
+    pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+    ```
+    Подробные инструкции в файле `README.md`.
+    """)
+    libs_ok = False
+
 tabs = st.tabs(["📁 Загрузка", "📝 Редактор", "📺 Суфлёр"])
 
 with tabs[0]:
@@ -76,17 +92,20 @@ with tabs[0]:
             except Exception as e:
                 st.error(f"Ошибка при чтении JSON: {e}")
         else:
-            if st.button("Обработать и сгенерировать план"):
+            if st.button("Обработать и сгенерировать план", disabled=not libs_ok):
                 with st.spinner("Извлечение текста и генерация сценария..."):
-                    slides = parse_presentation(uploaded_file)
-                    st.session_state["plan_and_script"] = [{"tosay": [], "script": "Генерируется..."} for _ in slides]
+                    try:
+                        slides = parse_presentation(uploaded_file)
+                        st.session_state["plan_and_script"] = [{"tosay": [], "script": "Генерируется..."} for _ in slides]
 
-                    placeholder = st.empty()
-                    for idx, partial in stream_generate_plan_and_script(slides):
-                        st.session_state["plan_and_script"][idx] = partial
-                        with placeholder.container():
-                            st.info(f"Генерация слайда {idx+1}/{len(slides)}...")
-                    st.success("Готово! Перейдите во вкладку 'Редактор' или 'Суфлёр'.")
+                        placeholder = st.empty()
+                        for idx, partial in stream_generate_plan_and_script(slides):
+                            st.session_state["plan_and_script"][idx] = partial
+                            with placeholder.container():
+                                st.info(f"Генерация слайда {idx+1}/{len(slides)}...")
+                        st.success("Готово! Перейдите во вкладку 'Редактор' или 'Суфлёр'.")
+                    except Exception as e:
+                        st.error(f"Произошла ошибка при генерации: {e}")
 
 with tabs[1]:
     st.header("Редактирование сценария")
